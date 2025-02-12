@@ -6,26 +6,22 @@ const router = express.Router();
 let volumeHistory = {};
 
 router.get('/check-volumes', async (req, res) => {
-    const usdtPairs = await getUsdtPairs();
-    for (const symbol of usdtPairs) {
-        const volume = await getVolume(symbol);
-        if (!volumeHistory[symbol]) {
-            volumeHistory[symbol] = [volume];
-        } else {
-            volumeHistory[symbol].push(volume);
-            if (volumeHistory[symbol].length > 4) {
-                volumeHistory[symbol].shift();
-            }
-        }
+    try {
+        const pairs = await getUsdtPairs();
+        for (const symbol of pairs) {
+            const currentVolume = await getVolume(symbol);
+            const avgVolume = volumeHistory[symbol] || currentVolume;
 
-        if (volumeHistory[symbol].length === 4) {
-            const avgVolume = volumeHistory[symbol].slice(0, 3).reduce((a, b) => a + b, 0) / 3;
-            if (volume > avgVolume * 10) {
-                await sendAlert(symbol, volume, avgVolume);
+            if (currentVolume >= 10 * avgVolume) {
+                await sendAlert(symbol, currentVolume, avgVolume);
             }
+
+            volumeHistory[symbol] = avgVolume * 0.75 + currentVolume * 0.25;
         }
+        res.json({ message: '🔍 بررسی حجم معاملات انجام شد.' });
+    } catch (error) {
+        res.status(500).json({ error: '❌ خطا در بررسی حجم معاملات' });
     }
-    res.send({ message: '🔍 بررسی حجم معاملات انجام شد!' });
 });
 
 module.exports = router;
