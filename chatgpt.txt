@@ -1,0 +1,372 @@
+برنامه رو بهینه‌تر کردیم و از Node.js + Express برای مدیریت API و ارسال هشدارهای تلگرام استفاده کردیم. این ساختار باعث می‌شه برنامه مقیاس‌پذیرتر و توسعه‌پذیرتر باشه.
+
+🚀 برنامه‌ریزی پروژه
+✅ دریافت لیست جفت‌ارزهای USDT از Binance
+✅ بررسی حجم معاملات و محاسبه میانگین ۴ ساعته
+✅ ارسال هشدار به تلگرام در صورت افزایش ۱۰ برابری
+✅ اجرای خودکار با setInterval
+✅ پیاده‌سازی Express API برای نمایش اطلاعات
+
+📂 ساختار پوشه‌ها
+bash
+Copy
+Edit
+crypto-alert-bot/
+│── src/
+│   │── config/
+│   │   ├── env.js              # مدیریت متغیرهای محیطی
+│   │── services/
+│   │   ├── binanceService.js   # دریافت داده‌ها از Binance
+│   │   ├── telegramService.js  # ارسال پیام به تلگرام
+│   │── utils/
+│   │   ├── logger.js           # مدیریت لاگ‌ها
+│   │── routes/
+│   │   ├── alertRoutes.js      # مسیرهای API
+│   │── server.js               # راه‌اندازی Express و اجرای برنامه
+│── .env                        # فایل متغیرهای محیطی
+│── package.json                # پیکربندی npm
+│── README.md                   # توضیحات پروژه
+1️⃣ ساخت Bot تلگرام
+به تلگرام برو و @BotFather رو سرچ کن.
+دستور /newbot رو بزن و نام و یوزرنیم انتخاب کن.
+توکنی که بهت میده رو توی .env ذخیره کن.
+یه گروه تلگرام بساز، رباتت رو توش ادد کن و chat ID بگیر.
+2️⃣ نصب پیش‌نیازها
+sh
+Copy
+Edit
+npm init -y
+npm install express axios dotenv
+express → برای راه‌اندازی سرور API
+axios → برای درخواست به Binance
+dotenv → برای ذخیره متغیرهای محیطی (.env)
+3️⃣ کدنویسی اصلی
+📌 src/config/env.js
+js
+Copy
+Edit
+require('dotenv').config();
+
+module.exports = {
+    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
+    BINANCE_API_URL: 'https://api.binance.com/api/v3'
+};
+📌 src/services/binanceService.js
+js
+Copy
+Edit
+const axios = require('axios');
+const { BINANCE_API_URL } = require('../config/env');
+
+async function getUsdtPairs() {
+    try {
+        const response = await axios.get(`${BINANCE_API_URL}/exchangeInfo`);
+        return response.data.symbols
+            .filter(symbol => symbol.quoteAsset === 'USDT' && symbol.status === 'TRADING')
+            .map(symbol => symbol.symbol);
+    } catch (error) {
+        console.error('❌ خطا در دریافت لیست ارزها:', error);
+        return [];
+    }
+}
+
+async function getVolume(symbol) {
+    try {
+        const response = await axios.get(`${BINANCE_API_URL}/ticker/24hr`, { params: { symbol } });
+        return parseFloat(response.data.quoteVolume);
+    } catch (error) {
+        console.error(`❌ خطا در دریافت حجم ${symbol}:`, error);
+        return 0;
+    }
+}
+
+module.exports = { getUsdtPairs, getVolume };
+📌 src/services/telegramService.js
+js
+Copy
+Edit
+const axios = require('axios');
+const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = require('../config/env');
+
+async function sendAlert(symbol, volume, avgVolume) {
+    const message = `🚨 **هشدار حجم معاملات** 🚨\n\n` +
+        `💰 **ارز:** ${symbol}\n` +
+        `📊 **حجم فعلی:** ${volume.toFixed(2)} USDT\n` +
+        `📉 **میانگین حجم ۴ ساعت:** ${avgVolume.toFixed(2)} USDT`;
+
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    
+    try {
+        await axios.post(url, { chat_id: TELEGRAM_CHAT_ID, text: message });
+        console.log(`✅ هشدار برای ${symbol} ارسال شد!`);
+    } catch (error) {
+        console.error('❌ خطا در ارسال پیام تلگرام:', error);
+    }
+}
+
+module.exports = { sendAlert };
+📌 src/utils/logger.js
+js
+Copy
+Edit
+function log(message) {
+    console.log(`[LOG] ${new Date().toISOString()} - ${message}`);
+}
+
+module.exports = { log };
+📌 src/routes/alertRoutes.js
+js
+Copy
+Edit
+const express = require('express');
+const { getUsdtPairs, getVolume } = require('../services/binanceService');
+const { sendAlert } = require('../services/telegramService');
+const router = express.Router();
+
+let volumeHistory = {};
+
+router.get('/check-volumes', async (req, res) => {
+    const usdtPairs = await getUsdtPairs();
+    for (const symbol of usdtPairs) {
+        const volume = await getVolume(symbol);
+        if (!volumeHistory[symbol]) {
+            volumeHistory[symbol] = [volume];
+        } else {
+            volumeHistory[symbol].push(volume);
+            if (volumeHistory[symbol].length > 4) {
+                volumeHistory[symbol].shift();
+            }
+        }
+
+        if (volumeHistory[symbol].length === 4) {
+            const avgVolume = volumeHistory[symbol].slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+            if (volume > avgVolume * 10) {
+                await sendAlert(symbol, volume, avgVolume);
+            }
+        }
+    }
+    res.send({ message: '🔍 بررسی حجم معاملات انجام شد!' });
+});
+
+module.exports = router;
+📌 src/server.js
+js
+Copy
+Edit
+const express = require('express');
+const alertRoutes = require('./routes/alertRoutes');
+const { log } = require('./utils/logger');
+
+const app = express();
+const PORT = 3000;
+
+app.use('/api', alertRoutes);
+
+app.listen(PORT, () => log(`🚀 سرور در حال اجرا روی پورت ${PORT}`));
+
+// اجرای خودکار بررسی حجم هر ۴ ساعت
+setInterval(() => {
+    fetch(`http://localhost:${PORT}/api/check-volumes`)
+        .then(res => res.json())
+        .then(data => log(data.message))
+        .catch(err => console.error('❌ خطا در بررسی حجم معاملات:', err));
+}, 4 * 60 * 60 * 1000);
+4️⃣ تنظیم .env
+ini
+Copy
+Edit
+TELEGRAM_BOT_TOKEN=توکن_بات_اینجا
+TELEGRAM_CHAT_ID=آیدی_چت_اینجا
+5️⃣ اجرای برنامه
+sh
+Copy
+Edit
+node src/server.js
+✅ برنامه هر ۴ ساعت بررسی می‌کنه و اگر حجم ۱۰ برابر میانگین شد، هشدار به تلگرام می‌فرسته.
+
+6️⃣ استقرار روی سرور (اختیاری)
+اجرای مداوم با PM2
+sh
+Copy
+Edit
+npm install -g pm2
+pm2 start src/server.js --name crypto-alert
+pm2 save
+pm2 startup
+✅ این کار باعث می‌شه برنامه بعد از ری‌استارت سرور هم اجرا بمونه.
+
+🎯 توسعه‌های آینده
+✅ فیلتر برای ارزهای خاص
+✅ نمایش تغییرات درصدی حجم در هشدار
+✅ ذخیره هشدارها در MongoDB
+
+🔥 حالا بگو، چی کم داره؟ 😎
+
+
+
+
+
+
+You said:
+طریقه استقرار روی render بگو
+ChatGPT said:
+برای استقرار روی Render، این مراحل رو دنبال کن:
+
+1️⃣ ساخت حساب و ایجاد پروژه در Render
+به سایت Render برو و ثبت‌نام کن (یا وارد شو).
+روی "New +" کلیک کن و گزینه "Web Service" رو انتخاب کن.
+به GitHub متصل شو و مخزن (Repository) گیت‌هاب پروژه‌ات رو انتخاب کن.
+2️⃣ تنظیمات اولیه در Render
+بعد از انتخاب ریپازیتوری، تنظیمات زیر رو انجام بده:
+
+تنظیم	مقدار پیشنهادی
+Name	crypto-alert-bot (یا هر اسم دلخواه)
+Runtime	Node
+Build Command	npm install
+Start Command	node src/server.js
+Instance Type	Free (اگر رایگان می‌خوای)
+بعد روی "Create Web Service" کلیک کن.
+
+3️⃣ اضافه کردن متغیرهای محیطی (.env)
+۱. بعد از ایجاد پروژه، به Settings برو.
+۲. در قسمت Environment Variables، روی "Add Environment Variable" کلیک کن و این مقادیر رو اضافه کن:
+
+Key	Value
+TELEGRAM_BOT_TOKEN	توکن_ربات_تلگرام
+TELEGRAM_CHAT_ID	آیدی_چت_تلگرام
+4️⃣ تست و بررسی
+بعد از دیپلوی موفق، لینک سرور (مثلاً https://crypto-alert-bot.onrender.com) بهت داده می‌شه.
+می‌تونی API رو با این لینک تست کنی:
+arduino
+Copy
+Edit
+https://crypto-alert-bot.onrender.com/api/check-volumes
+هر ۴ ساعت، برنامه به‌طور اتوماتیک بررسی‌ها رو انجام می‌ده و هشدارها رو به تلگرام ارسال می‌کنه.
+5️⃣ نگه‌داشتن برنامه در حال اجرا
+🔴 مشکل: سرویس رایگان Render بعد از چند دقیقه غیرفعال شدن، برنامه رو Sleep می‌کنه.
+✅ راه‌حل: هر چند دقیقه یک درخواست خودکار به سرور ارسال کن:
+
+sh
+Copy
+Edit
+*/15 * * * * curl https://crypto-alert-bot.onrender.com/api/check-volumes
+این کرون‌جاب رو می‌تونی در uptimerobot.com یا cron-job.org تنظیم کنی.
+این کار باعث می‌شه سرور همیشه فعال بمونه و به خواب نره!
+🎯 تمام شد!
+✅ الان برنامه روی Render آنلاین و همیشه در حال اجراست.
+✅ هر ۴ ساعت یک بار، حجم معاملات بررسی و هشدارها به تلگرام ارسال می‌شه.
+✅ با uptimerobot هم برنامه رو بیدار نگه می‌داریم!
+
+🔥 بزن بریم! 🚀
+
+
+
+
+
+
+You said:
+چجوری روی گیت هاب بفرستم
+ChatGPT said:
+برای ارسال پروژه روی GitHub، این مراحل رو دنبال کن:
+
+1️⃣ ایجاد مخزن (Repository) در GitHub
+وارد GitHub شو و به GitHub Repositories برو.
+یه اسم برای مخزن انتخاب کن (مثلاً crypto-alert-bot).
+گزینه Public (عمومی) یا Private (خصوصی) رو انتخاب کن.
+روی "Create Repository" کلیک کن.
+2️⃣ اتصال پروژه به مخزن GitHub
+اگر پروژه‌ات رو قبلاً روی سیستم خودت ساخته‌ای، این دستورات رو اجرا کن:
+
+sh
+Copy
+Edit
+# 1. پوشه پروژه رو باز کن
+cd crypto-alert-bot  
+
+# 2. گیت رو مقداردهی اولیه کن
+git init  
+
+# 3. مخزن GitHub رو به پروژه وصل کن (لینک مخزن خودت رو بزار)
+git remote add origin https://github.com/USERNAME/crypto-alert-bot.git  
+
+# 4. همه فایل‌ها رو به گیت اضافه کن
+git add .  
+
+# 5. اولین کامیت رو ثبت کن
+git commit -m "Initial commit - Crypto Alert Bot"  
+
+# 6. کد رو روی گیت‌هاب بفرست
+git push -u origin main  
+🔹 نکته: اگر branch پیش‌فرض main نیست، از master یا main استفاده کن.
+
+3️⃣ بررسی و اطمینان از ارسال کد
+بعد از ارسال، مخزن GitHub رو باز کن و ببین فایل‌های پروژه‌ات اضافه شده یا نه.
+
+✅ حالا می‌تونی Render رو به GitHub متصل کنی و برنامه رو دیپلوی کنی.
+🔥 بزن بریم! 🚀
+
+
+
+
+
+
+You said:
+PS C:\Users\SURFACE\Desktop\binance> git push -u origin main
+error: src refspec main does not match any
+error: failed to push some refs to 'https://github.com/Moshtada/binance.git'
+PS C:\Users\SURFACE\Desktop\binance> 
+ChatGPT said:
+این خطا معمولاً به یکی از دو دلیل زیر رخ می‌ده:
+
+Branch main وجود نداره (چون هنوز هیچ کامیتی انجام ندادی).
+نام branch پیش‌فرض master هست، نه main.
+✅ راه‌حل: مراحل درست برای ارسال پروژه به GitHub
+1️⃣ مطمئن شو که داخل پوشه‌ی پروژه هستی:
+
+sh
+Copy
+Edit
+cd C:\Users\SURFACE\Desktop\binance
+2️⃣ مقداردهی اولیه گیت (اگر قبلاً انجام ندادی):
+
+sh
+Copy
+Edit
+git init
+3️⃣ همه فایل‌ها رو به گیت اضافه کن:
+
+sh
+Copy
+Edit
+git add .
+4️⃣ اولین کامیت رو انجام بده:
+
+sh
+Copy
+Edit
+git commit -m "Initial commit"
+5️⃣ مطمئن شو که branch main وجود داره (اگر نبود، ایجاد کن):
+
+sh
+Copy
+Edit
+git branch -M main
+6️⃣ مخزن GitHub رو به پروژه متصل کن (لینک خودت رو بزار):
+
+sh
+Copy
+Edit
+git remote add origin https://github.com/Moshtada/binance.git
+7️⃣ کد رو روی GitHub بفرست:
+
+sh
+Copy
+Edit
+git push -u origin main
+🔥 بررسی بعد از ارسال
+اگر کدها با موفقیت روی GitHub رفتن، توی مرورگرت برو به:
+👉 https://github.com/Moshtada/binance
+و مطمئن شو که فایل‌ها اونجا هستن! 🚀
+
+اگر باز هم مشکل داشتی، پیام بده! 😎
