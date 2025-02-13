@@ -4,7 +4,7 @@ const { Telegraf } = require('telegraf');
 
 const COINEX_API_URL = 'https://api.coinex.com/v1';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID = process.env.CHAT_ID;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
