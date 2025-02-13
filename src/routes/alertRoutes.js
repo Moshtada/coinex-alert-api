@@ -1,5 +1,5 @@
 const express = require('express');
-const { getUsdtPairs, getVolume } = require('../services/binanceService');
+const { getUsdtPairs, getVolume } = require('../services/coinexService');
 const { sendAlert } = require('../services/telegramService');
 const router = express.Router();
 
