@@ -1,4 +1,5 @@
 require('dotenv').config();
+const express = require('express');
 const axios = require('axios');
 const { Telegraf } = require('telegraf');
 
@@ -6,9 +7,16 @@ const COINEX_API_URL = 'https://api.coinex.com/v1';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// پیام شروع سرور
+console.log('Server is starting...');
+
+// ربات تلگرام
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// تابعی برای گرفتن حجم معاملات
+// تابع برای گرفتن حجم معاملات
 async function getTradingVolume(market) {
     try {
         const response = await axios.get(`${COINEX_API_URL}/market/kline`, {
@@ -30,17 +38,33 @@ async function getTradingVolume(market) {
     }
 }
 
-// بررسی و ارسال پیام به تلگرام
+// بررسی و ارسال پیام هشدار
 async function checkAndSendAlerts() {
-    const markets = ['BTC/USDT', 'ETH/USDT']; // می‌توانید لیست ارزها را تغییر دهید
+    const markets = ['BTC/USDT', 'ETH/USDT']; // لیست ارزهای قابل بررسی
 
     for (const market of markets) {
         const averageVolume = await getTradingVolume(market);
         if (averageVolume) {
-            await bot.telegram.sendMessage(TELEGRAM_CHAT_ID, `حجم میانگین ${market} برای 5 روز گذشته: ${averageVolume}`);
+            await bot.telegram.sendMessage(
+                TELEGRAM_CHAT_ID, 
+                `حجم میانگین ${market} برای 5 روز گذشته: ${averageVolume}`
+            );
         }
     }
 }
 
-// اجرای برنامه هر 4 ساعت
-setInterval(checkAndSendAlerts, 4 * 60 * 60 * 1000);
+// مسیر API برای بررسی حجم معاملات
+app.get('/api/check-volumes', async (req, res) => {
+    try {
+        await checkAndSendAlerts();
+        res.send('Check and alerts sent.');
+    } catch (error) {
+        console.error('❌ خطا در بررسی حجم معاملات:', error);
+        res.status(500).send('خطا در بررسی حجم معاملات');
+    }
+});
+
+// اجرای سرور
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+});
