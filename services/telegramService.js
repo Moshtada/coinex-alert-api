@@ -8,12 +8,21 @@ async function sendAlert(symbol, volume, avgVolume) {
         `📉 **میانگین حجم ۴ ساعت:** ${avgVolume.toFixed(2)} USDT`;
 
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    
+
     try {
-        await axios.post(url, { chat_id: TELEGRAM_CHAT_ID, text: message });
-        console.log(`✅ هشدار برای ${symbol} ارسال شد!`);
+        const response = await axios.post(url, { chat_id: TELEGRAM_CHAT_ID, text: message });
+        console.log(`✅ هشدار برای ${symbol} ارسال شد!`, response.data);
     } catch (error) {
-        console.error('❌ خطا در ارسال پیام تلگرام:', error);
+        if (error.response) {
+            // اگر خطایی از سمت سرور تلگرام باشد
+            console.error('❌ خطا در ارسال پیام تلگرام:', error.response.data);
+        } else if (error.request) {
+            // اگر درخواست به تلگرام ارسال شده اما پاسخی دریافت نشده
+            console.error('❌ درخواست ارسال شد اما پاسخی دریافت نشد:', error.request);
+        } else {
+            // خطای ناشی از تنظیمات یا موارد دیگر
+            console.error('❌ خطای غیرمنتظره در ارسال پیام تلگرام:', error.message);
+        }
     }
 }
 
