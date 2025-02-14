@@ -8,7 +8,7 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT
 
 // پیام شروع سرور
 console.log('Server is starting...');
