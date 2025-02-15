@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const { Telegraf } = require('telegraf');
 
-const COINEX_API_URL = 'https://api.coinex.com/v2';
+const COINEX_API_URL = 'https://api.coinex.com/v1/market';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
@@ -40,7 +40,7 @@ async function getTradingVolume(market) {
 
 // بررسی و ارسال پیام هشدار
 async function checkAndSendAlerts() {
-    const markets = ['BTC/USDT', 'ETH/USDT']; // لیست ارزهای قابل بررسی
+    const markets = ['BTCUSDT', 'ETHUSDT']; // لیست ارزهای قابل بررسی
 
     for (const market of markets) {
         const averageVolume = await getTradingVolume(market);
