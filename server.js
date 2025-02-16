@@ -3,7 +3,7 @@ const express = require('express');
 const axios = require('axios');
 const { Telegraf } = require('telegraf');
 
-const COINEX_API_URL = 'https://api.coinex.com/v1/market/list';
+const BINANCE_API_URL = 'https://api.binance.com/api/v1/klines';
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
@@ -16,22 +16,20 @@ console.log('Server is starting...');
 // ربات تلگرام
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// تابع برای گرفتن حجم معاملات
-async function getTradingVolume(market) {
+// تابع برای گرفتن حجم معاملات از بایننس
+async function getTradingVolumes(symbol) {
     try {
-        const response = await axios.get(`${COINEX_API_URL}/market/kline`, {
+        const response = await axios.get(BINANCE_API_URL, {
             params: {
-                market: market,
-                type: '4hour',
-                limit: 30, // تعداد کندل‌ها (5 روز * 6 کندل 4 ساعته در هر روز)
-            },
+                symbol: symbol,
+                interval: '4h',
+                limit: 60, // 10 روز * 6 کندل ۴ ساعته در هر روز
+            }
         });
 
-        const data = response.data.data;
+        const data = response.data;
         const volumes = data.map(item => parseFloat(item[5])); // گرفتن حجم معاملات
-        const averageVolume = (volumes.reduce((sum, volume) => sum + volume, 0)) / volumes.length;
-
-        return averageVolume;
+        return volumes;
     } catch (error) {
         console.error('❌ خطا در دریافت حجم معاملات:', error);
         return null;
@@ -40,15 +38,19 @@ async function getTradingVolume(market) {
 
 // بررسی و ارسال پیام هشدار
 async function checkAndSendAlerts() {
-    const markets = ['BTCUSDT', 'ETHUSDT']; // لیست ارزهای قابل بررسی
+    const symbol = 'BTCUSDT';
+    const volumes = await getTradingVolumes(symbol);
+    
+    if (volumes) {
+        const averageVolume = volumes.reduce((sum, volume) => sum + volume, 0) / volumes.length;
 
-    for (const market of markets) {
-        const averageVolume = await getTradingVolume(market);
-        if (averageVolume) {
-            await bot.telegram.sendMessage(
-                TELEGRAM_CHAT_ID, 
-                `حجم میانگین ${market} برای 5 روز گذشته: ${averageVolume}`
-            );
+        for (const volume of volumes) {
+            if (volume > 5 * averageVolume) {
+                await bot.telegram.sendMessage(
+                    TELEGRAM_CHAT_ID, 
+                    `حجم معاملات کندل ۴ ساعته ${symbol} بیش از ۵ برابر حجم میانگین ۱۰ روز گذشته است: ${volume}`
+                );
+            }
         }
     }
 }
