@@ -1,18 +1,19 @@
 const axios = require('axios');
 require('dotenv').config();
 
-const COINEX_API_BASE = 'https://api.coinex.com/v1/market/kline';
+// URL صحیح برای دریافت اطلاعات تیکر
+const COINEX_API_BASE = 'https://api.coinex.com/v1/market/ticker';
 
 const fetchVolumeData = async () => {
     try {
         const response = await axios.get(COINEX_API_BASE, {
             params: {
-                market: 'BTCUSDT',  // جفت ارز مورد نظر
-                type: '4hour',      // بازه زمانی ۴ ساعته
-                limit: 30           // دریافت داده‌های ۳۰ بازه
+                market: 'BTCUSDT'  // جفت ارز مورد نظر
             }
         });
-        return response.data.data;
+
+        const volumeData = response.data.data.BTCUSDT;  // داده‌های جفت ارز BTC/USDT
+        return volumeData; // حجم معاملات و سایر داده‌ها
     } catch (error) {
         throw new Error('❌ خطا در دریافت داده‌های حجم معاملات از CoinEx');
     }
